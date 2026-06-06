@@ -1,0 +1,4 @@
+interface:
+  display_name: "Chrome Obsidian Web Clipper"
+  short_description: "Save Chrome pages through Obsidian Web Clipper."
+  default_prompt: "Use $chrome-obsidian-web-clipper to save the current Chrome page as a file with Obsidian Web Clipper."
