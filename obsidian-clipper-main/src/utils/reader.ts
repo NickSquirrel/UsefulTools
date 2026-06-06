@@ -2,7 +2,7 @@ import Defuddle from 'defuddle/full';
 import browser from './browser-polyfill';
 import { detectBrowser } from './browser-detection';
 import { flattenShadowDom as flattenShadowDomUtil } from './flatten-shadow-dom';
-import { getLocalStorage, setLocalStorage } from './storage-utils';
+import { generalSettings, getLocalStorage, setLocalStorage } from './storage-utils';
 import hljs from 'highlight.js';
 import { getDomain } from './string-utils';
 import type { HighlighterAPI } from './highlighter';
@@ -12,7 +12,7 @@ import { removeExistingHighlights as localRemoveExistingHighlights } from './hig
 // Bridge: on a live page with reader mode (case 2), content.js already loaded
 // and owns the highlighter module. reader-script.js delegates to it via this
 // window global to avoid two independent `highlights[]` arrays on the same
-// tab. On the standalone reader.html (case 3), no content.js exists â€” the
+// tab. On the standalone reader.html (case 3), no content.js exists â€?the
 // direct import is the only copy and serves as the fallback. Cached after
 // first resolution so the fallback spread doesn't re-allocate per call.
 let _hl: HighlighterAPI;
@@ -844,7 +844,7 @@ export class Reader {
 			return pre;
 		}
 
-		const defuddle = new Defuddle(doc, { url: doc.URL });
+		const defuddle = new Defuddle(doc, { url: doc.URL, language: generalSettings.transcriptLanguagePriority || undefined });
 		const defuddled = await defuddle.parseAsync();
 
 		return {
@@ -971,7 +971,7 @@ export class Reader {
 		// Set up intersection observer for headings
 		const allHeadings = [titleHeading, ...headings].filter(Boolean) as Element[];
 
-		// Suppress observer until user scrolls â€” on initial load images
+		// Suppress observer until user scrolls â€?on initial load images
 		// haven't rendered yet so headings below the fold appear in-view.
 		let outlineReady = !!window.location.hash || window.scrollY > 0;
 		if (!outlineReady) {
@@ -1188,7 +1188,7 @@ export class Reader {
 		this.footnoteClickHandler = (e: Event) => {
 			const target = e.target as HTMLElement;
 
-			// Handle backref clicks â€” scroll to the inline reference
+			// Handle backref clicks â€?scroll to the inline reference
 			const backrefLink = target.closest('a.footnote-backref') as HTMLAnchorElement;
 			if (backrefLink) {
 				e.preventDefault();
@@ -1349,7 +1349,7 @@ export class Reader {
 	private static cleanupScripts(doc: Document) {
 		try {
 			// Polyfill requestIdleCallback for WebKit-based browsers (e.g. Orion)
-			// that don't support it â€” page scripts may reference it in disconnectedCallback
+			// that don't support it â€?page scripts may reference it in disconnectedCallback
 			if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'undefined') {
 				(window as any).requestIdleCallback = (cb: Function) => setTimeout(cb, 1);
 				(window as any).cancelIdleCallback = (id: number) => clearTimeout(id);
@@ -1378,7 +1378,7 @@ export class Reader {
 			scripts.forEach(el => el.remove());
 
 			// Replace body with a clone to remove all event listeners.
-			// Skip when the clipper iframe is present â€” cloning creates a
+			// Skip when the clipper iframe is present â€?cloning creates a
 			// new iframe element which reloads and loses user edits.
 			if (!doc.getElementById('obsidian-clipper-container')) {
 				const newBody = doc.body.cloneNode(true);
@@ -2201,7 +2201,7 @@ export class Reader {
 			// H: toggle highlighter
 			Reader.registerHotkey(doc, 'h', () => Reader.toggleHighlighter(doc));
 
-			// Selection â†’ highlight affordance. When highlighter is OFF and the
+			// Selection â†?highlight affordance. When highlighter is OFF and the
 			// user makes a normal text selection inside the article, surface a
 			// floating button that converts the selection into a highlight.
 			Reader.registerSelectionToHighlightButton(doc);
@@ -2247,8 +2247,7 @@ export class Reader {
 					youtubeVideoElement.className = 'reader-video-player';
 					youtubeVideoElement.removeAttribute('style');
 					youtubeVideoElement.setAttribute('controls', '');
-					// YouTube's JS may keep resetting attributes â€”
-					// use a MutationObserver to enforce our settings
+					// YouTube's JS may keep resetting attributes â€?					// use a MutationObserver to enforce our settings
 					const videoObs = new MutationObserver(() => {
 						if (!youtubeVideoElement!.hasAttribute('controls')) {
 							youtubeVideoElement!.setAttribute('controls', '');
@@ -2370,15 +2369,14 @@ export class Reader {
 		btn.setAttribute('aria-label', getMessage('highlightSelection'));
 		setElementHTML(btn, `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg><span>${getMessage('highlightSelection')}</span>`);
 		btn.style.display = 'none';
-		// Preserve the selection when the pointer goes down on the button â€”
-		// otherwise the browser clears it before click handlers run.
+		// Preserve the selection when the pointer goes down on the button â€?		// otherwise the browser clears it before click handlers run.
 		btn.addEventListener('mousedown', e => e.preventDefault());
 		btn.addEventListener('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
 			const sel = doc.getSelection();
 			if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-			// Create the highlight without entering highlighter mode â€” the
+			// Create the highlight without entering highlighter mode â€?the
 			// user's intent is a single edit, not a session. handleTextSelection
 			// reads the live selection and clears it on return.
 			hl().handleTextSelection(sel);
@@ -2466,7 +2464,7 @@ export class Reader {
 	static async toggle(doc: Document): Promise<boolean> {
 		if (this.isActive) {
 			await this.restore(doc);
-			// restore() triggers a page reload â€” return a promise that
+			// restore() triggers a page reload â€?return a promise that
 			// never resolves to prevent further DOM changes (like
 			// removing reader classes) that would flash before reload
 			return new Promise(() => {});

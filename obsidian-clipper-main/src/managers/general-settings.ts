@@ -230,6 +230,15 @@ export function initializeGeneralSettings(): void {
 		await initializeUsageChart();
 
 		// Initialize feedback modal close button
+
+	// Initialize transcript language priority field
+	const transcriptLangEl = document.getElementById('transcript-language-input') as HTMLInputElement;
+	if (transcriptLangEl) {
+		transcriptLangEl.value = generalSettings.transcriptLanguagePriority || '';
+		transcriptLangEl.addEventListener('change', () => {
+			saveSettings({ ...generalSettings, transcriptLanguagePriority: transcriptLangEl.value });
+		});
+	}
 		const feedbackModal = document.getElementById('feedback-modal');
 		const feedbackCloseBtn = feedbackModal?.querySelector('.feedback-close-btn');
 		if (feedbackCloseBtn) {
@@ -257,6 +266,7 @@ function saveSettingsFromForm(): void {
 	const alwaysShowHighlightsToggle = document.getElementById('highlighter-visibility') as HTMLInputElement;
 	const highlightBehaviorSelect = document.getElementById('highlighter-behavior') as HTMLSelectElement;
 
+		const transcriptLangEl = document.getElementById('transcript-language-input') as HTMLInputElement;
 	const updatedSettings = {
 		...generalSettings, // Keep existing settings
 		openBehavior: (openBehaviorDropdown?.value as Settings['openBehavior']) ?? generalSettings.openBehavior,
@@ -266,7 +276,8 @@ function saveSettingsFromForm(): void {
 		silentOpen: silentOpenToggle?.checked ?? generalSettings.silentOpen,
 		highlighterEnabled: highlighterToggle?.checked ?? generalSettings.highlighterEnabled,
 		alwaysShowHighlights: alwaysShowHighlightsToggle?.checked ?? generalSettings.alwaysShowHighlights,
-		highlightBehavior: highlightBehaviorSelect?.value ?? generalSettings.highlightBehavior
+		highlightBehavior: highlightBehaviorSelect?.value ?? generalSettings.highlightBehavior,
+				transcriptLanguagePriority: transcriptLangEl?.value ?? generalSettings.transcriptLanguagePriority,
 	};
 
 	saveSettings(updatedSettings);

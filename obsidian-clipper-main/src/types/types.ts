@@ -97,6 +97,7 @@ export interface Settings {
 	history: HistoryEntry[];
 	ratings: Rating[];
 	saveBehavior: 'addToObsidian' | 'saveFile' | 'copyToClipboard';
+	transcriptLanguagePriority: string;
 }
 
 export interface ModelConfig {

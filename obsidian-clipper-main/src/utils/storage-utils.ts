@@ -47,7 +47,8 @@ export let generalSettings: Settings = {
 	},
 	history: [],
 	ratings: [],
-	saveBehavior: 'addToObsidian'
+	saveBehavior: 'addToObsidian',
+	transcriptLanguagePriority: '',
 };
 
 export function setLocalStorage(key: string, value: any): Promise<void> {
@@ -66,6 +67,7 @@ interface StorageData {
 		silentOpen?: boolean;
 		openBehavior?: boolean | 'popup' | 'embedded';
 		saveBehavior?: 'addToObsidian' | 'copyToClipboard' | 'saveFile';
+		transcriptLanguagePriority?: string;
 	};
 	vaults?: string[];
 	highlighter_settings?: {
@@ -159,6 +161,7 @@ export async function loadSettings(): Promise<Settings> {
 		},
 		history: [],
 		ratings: [],
+		transcriptLanguagePriority: '',
 	};
 
 	// Update migration version if needed
@@ -216,7 +219,8 @@ export async function loadSettings(): Promise<Settings> {
 		stats: data.stats || defaultSettings.stats,
 		history: data.history || defaultSettings.history,
 		ratings: data.ratings || defaultSettings.ratings,
-		saveBehavior: data.general_settings?.saveBehavior ?? defaultSettings.saveBehavior
+		saveBehavior: data.general_settings?.saveBehavior ?? defaultSettings.saveBehavior,
+		transcriptLanguagePriority: data.general_settings?.transcriptLanguagePriority ?? defaultSettings.transcriptLanguagePriority,
 	};
 
 	generalSettings = loadedSettings;
@@ -238,6 +242,7 @@ export async function saveSettings(settings?: Partial<Settings>): Promise<void> 
 			silentOpen: generalSettings.silentOpen,
 			openBehavior: generalSettings.openBehavior,
 			saveBehavior: generalSettings.saveBehavior,
+			transcriptLanguagePriority: generalSettings.transcriptLanguagePriority,
 		},
 		highlighter_settings: {
 			highlighterEnabled: generalSettings.highlighterEnabled,
@@ -337,7 +342,7 @@ declare global {
 	}
 }
 
-// Make storage accessible from console â€” use `window.debugStorage()` to see all sync storage, or `window.debugStorage(key)` to see a specific key
+// Make storage accessible from console â€?use `window.debugStorage()` to see all sync storage, or `window.debugStorage(key)` to see a specific key
 if (typeof window !== 'undefined') {
 	window.debugStorage = (key?: string) => {
 		if (key) {

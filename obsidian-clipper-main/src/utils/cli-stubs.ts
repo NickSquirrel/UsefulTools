@@ -49,6 +49,7 @@ export const generalSettings: Settings = {
 	history: [],
 	ratings: [],
 	saveBehavior: 'addToObsidian',
+	transcriptLanguagePriority: '',
 };
 
 export const loadSettings = async () => {};
