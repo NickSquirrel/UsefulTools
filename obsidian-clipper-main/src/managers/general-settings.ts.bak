@@ -266,7 +266,7 @@ function saveSettingsFromForm(): void {
 	const alwaysShowHighlightsToggle = document.getElementById('highlighter-visibility') as HTMLInputElement;
 	const highlightBehaviorSelect = document.getElementById('highlighter-behavior') as HTMLSelectElement;
 
-	const transcriptLangEl = document.getElementById('transcript-language-input') as HTMLInputElement;
+		const transcriptLangEl = document.getElementById('transcript-language-input') as HTMLInputElement;
 	const updatedSettings = {
 		...generalSettings, // Keep existing settings
 		openBehavior: (openBehaviorDropdown?.value as Settings['openBehavior']) ?? generalSettings.openBehavior,
@@ -277,7 +277,7 @@ function saveSettingsFromForm(): void {
 		highlighterEnabled: highlighterToggle?.checked ?? generalSettings.highlighterEnabled,
 		alwaysShowHighlights: alwaysShowHighlightsToggle?.checked ?? generalSettings.alwaysShowHighlights,
 		highlightBehavior: highlightBehaviorSelect?.value ?? generalSettings.highlightBehavior,
-		transcriptLanguagePriority: transcriptLangEl?.value ?? generalSettings.transcriptLanguagePriority,
+				transcriptLanguagePriority: transcriptLangEl?.value ?? generalSettings.transcriptLanguagePriority,
 	};
 
 	saveSettings(updatedSettings);
