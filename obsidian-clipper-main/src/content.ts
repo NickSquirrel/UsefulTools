@@ -2,7 +2,7 @@ import browser from './utils/browser-polyfill';
 import * as highlighter from './utils/highlighter';
 import { removeExistingHighlights } from './utils/highlighter-overlays';
 import { loadSettings, generalSettings } from './utils/storage-utils';
-import { getDomain } from './utils/string-utils';
+import { getDomain, preprocessLanguagePriority } from './utils/string-utils';
 import { extractContentBySelector as extractContentBySelectorShared } from './utils/shared';
 import Defuddle from 'defuddle';
 import { createMarkdownContent } from 'defuddle/full';
@@ -213,7 +213,7 @@ declare global {
 
 				// Use parseAsync to ensure async variables like {{transcript}} are available.
 				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
-				const defuddle = new Defuddle(document, { url: document.URL, language: generalSettings.transcriptLanguagePriority || undefined });
+				const defuddle = new Defuddle(document, { url: document.URL, language: preprocessLanguagePriority(generalSettings.transcriptLanguagePriority) || undefined });
 				const parseTimeout = new Promise<never>((_, reject) =>
 					setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
 				);
@@ -443,7 +443,7 @@ declare global {
 	// webpack bundle injected when reader mode activates) can delegate
 	// all state operations to this single module instance. Without this,
 	// both bundles own a copy of highlighter.ts with independent mutable
-	// state â€?the bridge ensures one source of truth per tab.
+	// state ï¿½?the bridge ensures one source of truth per tab.
 	window.__obsidianHighlighter = {
 		toggleHighlighterMenu: highlighter.toggleHighlighterMenu,
 		handleTextSelection: highlighter.handleTextSelection,

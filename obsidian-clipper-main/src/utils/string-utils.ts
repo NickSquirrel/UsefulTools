@@ -194,3 +194,28 @@ export function getDomain(url: string): string {
 		return '';
 	}
 }
+
+/**
+ * Preprocess a comma-separated language priority string for use with Defuddle.
+ * Moves generic language codes (e.g. "zh") after specific variants (e.g. "zh-CN", "zh-HK")
+ * to prevent broad codes from eagerly matching the wrong regional variant.
+ */
+export function preprocessLanguagePriority(input: string): string {
+	if (!input) return '';
+	const codes = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+	const primaryMap = new Map<string, string[]>();
+	for (const code of codes) {
+		const primary = code.split('-')[0];
+		if (!primaryMap.has(primary)) primaryMap.set(primary, []);
+		primaryMap.get(primary)!.push(code);
+	}
+	const result: string[] = [];
+	for (const code of codes) {
+		const primary = code.split('-')[0];
+		const family = primaryMap.get(primary)!;
+		const hasSpecific = family.some(c => c.includes('-'));
+		if (hasSpecific && !code.includes('-')) continue;
+		result.push(code);
+	}
+	return result.join(', ');
+}
