@@ -12,6 +12,7 @@ import { saveFile } from './utils/file-utils';
 import { debugLog } from './utils/debug';
 import { updateSidebarWidth, addResizeHandle, cleanupResizeHandlers } from './utils/iframe-resize';
 import { parseForClip } from './utils/clip-utils';
+import { extractBilibiliContent } from './utils/bilibili-transcript';
 
 declare global {
 	interface Window {
@@ -151,12 +152,12 @@ declare global {
 		}
 
 		if (request.action === "copyMarkdownToClipboard") {
-			flattenShadowDom(document).then(() => {
+			flattenShadowDom(document).then(async () => {
 				try {
-					const defuddled = parseForClip(document);
+					const extracted = await parseForDirectMarkdown();
 
 					// Convert HTML content to markdown
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
+					const markdown = createMarkdownContent(extracted.content, document.URL);
 
 					// Copy to clipboard
 					const textArea = document.createElement("textarea");
@@ -178,9 +179,9 @@ declare global {
 		if (request.action === "saveMarkdownToFile") {
 			flattenShadowDom(document).then(async () => {
 				try {
-					const defuddled = parseForClip(document);
-					const markdown = createMarkdownContent(defuddled.content, document.URL);
-					const title = defuddled.title || document.title || 'Untitled';
+					const extracted = await parseForDirectMarkdown();
+					const markdown = createMarkdownContent(extracted.content, document.URL);
+					const title = extracted.title || document.title || 'Untitled';
 					const fileName = title.replace(/[/\\?%*:|"<>]/g, '-');
 					await saveFile({
 						content: markdown,
@@ -219,8 +220,14 @@ declare global {
 				);
 				const defuddled = await Promise.race([defuddle.parseAsync(), parseTimeout])
 					.catch(() => defuddle.parse());
+				const bilibili = await extractBilibiliContent(
+					document,
+					document.URL,
+					preprocessLanguagePriority(generalSettings.transcriptLanguagePriority)
+				);
 				const extractedContent: { [key: string]: string } = {
 					...defuddled.variables,
+					...(bilibili?.variables || {}),
 				};
 
 				// Create a new DOMParser
@@ -266,22 +273,22 @@ declare global {
 				const cleanedHtml = doc.documentElement.outerHTML;
 
 				const response: ContentResponse = {
-					author: defuddled.author,
-					content: defuddled.content,
-					description: defuddled.description,
+					author: bilibili?.author || defuddled.author,
+					content: bilibili?.content || defuddled.content,
+					description: bilibili?.description || defuddled.description,
 					domain: getDomain(document.URL),
 					extractedContent: extractedContent,
 					favicon: defuddled.favicon,
 					fullHtml: cleanedHtml,
 					highlights: highlighter.getHighlights(),
-					image: defuddled.image,
-					language: defuddled.language || '',
+					image: bilibili?.image || defuddled.image,
+					language: bilibili?.language || defuddled.language || '',
 					parseTime: defuddled.parseTime,
-					published: defuddled.published,
+					published: bilibili?.published || defuddled.published,
 					schemaOrgData: defuddled.schemaOrgData,
 					selectedHtml: selectedHtml,
-					site: defuddled.site,
-					title: defuddled.title,
+					site: bilibili?.site || defuddled.site,
+					title: bilibili?.title || defuddled.title,
 					wordCount: defuddled.wordCount,
 					metaTags: defuddled.metaTags || []
 				};
@@ -398,6 +405,19 @@ declare global {
 
 	function extractContentBySelector(selector: string, attribute?: string, extractHtml: boolean = false): string | string[] {
 		return extractContentBySelectorShared(document, selector, attribute, extractHtml);
+	}
+
+	async function parseForDirectMarkdown(): Promise<{ content: string; title?: string }> {
+		const defuddled = parseForClip(document);
+		const bilibili = await extractBilibiliContent(
+			document,
+			document.URL,
+			preprocessLanguagePriority(generalSettings.transcriptLanguagePriority)
+		);
+		return {
+			content: bilibili?.content || defuddled.content,
+			title: bilibili?.title || defuddled.title,
+		};
 	}
 
 	function updateHasHighlights() {

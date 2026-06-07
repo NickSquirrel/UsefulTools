@@ -31,6 +31,7 @@ import { saveFile } from './file-utils';
 import { parseForClip } from './clip-utils';
 import { updateSidebarWidth, addResizeHandle, cleanupResizeHandlers } from './iframe-resize';
 import { setElementHTML, setSVGChildren, serializeChildren } from './dom-utils';
+import { extractBilibiliContent } from './bilibili-transcript';
 
 // Mobile viewport settings
 const VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1';
@@ -846,12 +847,17 @@ export class Reader {
 
 		const defuddle = new Defuddle(doc, { url: doc.URL, language: preprocessLanguagePriority(generalSettings.transcriptLanguagePriority) || undefined });
 		const defuddled = await defuddle.parseAsync();
+		const bilibili = await extractBilibiliContent(
+			doc,
+			doc.URL,
+			preprocessLanguagePriority(generalSettings.transcriptLanguagePriority)
+		);
 
 		return {
-			content: defuddled.content,
-			title: defuddled.title,
-			author: defuddled.author,
-			published: defuddled.published,
+			content: bilibili?.content || defuddled.content,
+			title: bilibili?.title || defuddled.title,
+			author: bilibili?.author || defuddled.author,
+			published: bilibili?.published || defuddled.published,
 			domain: getDomain(doc.URL),
 			wordCount: defuddled.wordCount,
 			parseTime: defuddled.parseTime
