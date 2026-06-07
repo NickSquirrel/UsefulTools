@@ -4,6 +4,7 @@ const BILIBILI_PLAYER_API = 'https://api.bilibili.com/x/player/v2';
 const BILIBILI_PLAYER_WBI_API = 'https://api.bilibili.com/x/player/wbi/v2';
 const BILIBILI_VIEW_API = 'https://api.bilibili.com/x/web-interface/view';
 const FETCH_TIMEOUT_MS = 6000;
+type FetchJsonSource = 'page' | 'background' | 'direct' | 'none';
 
 const DEFAULT_LANGUAGE_PRIORITY = [
 	'zh-Hans',
@@ -50,6 +51,8 @@ interface BilibiliPlayerData {
 interface BilibiliPlayerFetchResult {
 	data: BilibiliPlayerData | null;
 	endpoint?: string;
+	requestParams?: string;
+	fetchSource: FetchJsonSource;
 	usedDirectRetry: boolean;
 }
 
@@ -74,10 +77,12 @@ interface FetchJsonOptions {
 	credentials?: RequestCredentials;
 	referrer?: string;
 	cache?: RequestCache;
+	preferPage?: boolean;
 }
 
 interface FetchJsonResult {
 	json: any;
+	source: FetchJsonSource;
 	usedDirectRetry: boolean;
 }
 
@@ -87,6 +92,7 @@ export interface BilibiliTranscript {
 	languageCode: string;
 	languageName: string;
 	source: 'cc' | 'ai';
+	subtitleFetchSource?: FetchJsonSource;
 }
 
 export interface BilibiliExtraction {
@@ -160,6 +166,13 @@ export function buildBilibiliPlayerParams(bvid: string, cid: number): string {
 	].join('&');
 }
 
+export function buildBilibiliPlayerWbiParams(aid: number, cid: number): string {
+	return [
+		`aid=${encodeURIComponent(String(aid))}`,
+		`cid=${encodeURIComponent(String(cid))}`,
+	].join('&');
+}
+
 export function isBilibiliViewDataForBvid(viewData: BilibiliViewData | null, bvid: string): boolean {
 	return !!viewData?.bvid && viewData.bvid === bvid;
 }
@@ -209,9 +222,8 @@ export async function extractBilibiliContent(
 	const bvid = extractBvid(url);
 	if (!bvid) return null;
 
-	const inlineViewData = getInlineViewData(document, bvid);
-	const fetchedViewData = await fetchViewData(bvid);
-	const viewData = (isBilibiliViewDataForBvid(fetchedViewData, bvid) ? fetchedViewData : null) || inlineViewData;
+	const fetchedViewData = await fetchViewData(bvid, url);
+	const viewData = isBilibiliViewDataForBvid(fetchedViewData, bvid) ? fetchedViewData : null;
 	if (!viewData) {
 		console.warn('[Obsidian Clipper] Bilibili view data unavailable', {
 			bvid,
@@ -227,11 +239,11 @@ export async function extractBilibiliContent(
 	if (!cid) return null;
 	const selectedPage = getPageByCid(viewData, cid) || page;
 
-	const playerResult = await fetchPlayerData(bvid, cid);
+	const playerResult = await fetchPlayerData(bvid, cid, viewData.aid, url);
 	const playerData = playerResult.data;
 	const tracks = playerData?.subtitle?.subtitles || [];
 	const track = pickBilibiliSubtitleTrack(tracks, languagePriority);
-	const transcript = track ? await fetchTranscript(track) : undefined;
+	const transcript = track ? await fetchTranscript(track, url) : undefined;
 	if (!transcript) {
 		console.warn('[Obsidian Clipper] Bilibili transcript unavailable', {
 			bvid,
@@ -242,6 +254,8 @@ export async function extractBilibiliContent(
 			viewAid: viewData.aid || '',
 			viewCid: viewData.cid || '',
 			playerEndpoint: playerResult.endpoint || '',
+			playerRequestParams: playerResult.requestParams || '',
+			playerFetchSource: playerResult.fetchSource,
 			usedDirectRetry: playerResult.usedDirectRetry,
 			trackCount: tracks.length,
 			playerTrackCount: playerData?.subtitle?.subtitles?.length || 0,
@@ -260,12 +274,15 @@ export async function extractBilibiliContent(
 			viewAid: viewData.aid || '',
 			viewCid: viewData.cid || '',
 			playerEndpoint: playerResult.endpoint || '',
+			playerRequestParams: playerResult.requestParams || '',
+			playerFetchSource: playerResult.fetchSource,
 			usedDirectRetry: playerResult.usedDirectRetry,
 			trackId: track?.id || '',
 			trackIdStr: track?.id_str || '',
 			trackLanguage: track?.lan,
 			trackName: track?.lan_doc,
 			source: transcript.source,
+			subtitleFetchSource: transcript.subtitleFetchSource || '',
 			subtitleUrl: track?.subtitle_url || '',
 			preview: transcript.text.slice(0, 120),
 		});
@@ -378,7 +395,9 @@ export function selectBilibiliCid(
 
 function getCidByPage(viewData: BilibiliViewData | null, page: number): number | undefined {
 	const pageMatch = viewData?.pages?.find(item => item.page === page);
-	return pageMatch?.cid || viewData?.cid || viewData?.pages?.[0]?.cid;
+	if (pageMatch?.cid) return pageMatch.cid;
+	if (page <= 1 && viewData?.cid && cidBelongsToVideo(viewData, viewData.cid)) return viewData.cid;
+	return viewData?.pages?.[0]?.cid;
 }
 
 function getPageByCid(viewData: BilibiliViewData | null, cid: number): number | undefined {
@@ -386,7 +405,7 @@ function getPageByCid(viewData: BilibiliViewData | null, cid: number): number | 
 }
 
 function cidBelongsToVideo(viewData: BilibiliViewData | null, cid: number): boolean {
-	if (!viewData?.pages?.length) return true;
+	if (!viewData?.pages?.length) return viewData?.cid === cid;
 	return viewData.pages.some(page => page.cid === cid);
 }
 
@@ -395,92 +414,81 @@ function parseCid(value: string | null | undefined): number | undefined {
 	return Number.isFinite(cid) && cid > 0 ? cid : undefined;
 }
 
-function getInlineViewData(document: Document, bvid?: string): BilibiliViewData | null {
-	const scripts = Array.from(document.querySelectorAll('script'));
-	for (const script of scripts) {
-		const text = script.textContent || '';
-		if (!text.includes('__INITIAL_STATE__')) continue;
-		const jsonText = extractAssignedJson(text, '__INITIAL_STATE__');
-		if (!jsonText) continue;
-		try {
-			const parsed = JSON.parse(jsonText);
-			const videoData = parsed?.videoData || parsed?.videoInfo || parsed;
-			if (bvid && videoData?.bvid !== bvid) {
-				continue;
-			}
-			if (videoData?.cid || videoData?.pages?.length) {
-				return videoData;
-			}
-		} catch {
-			// ignore malformed inline state
-		}
-	}
-	return null;
-}
-
-function extractAssignedJson(text: string, marker: string): string {
-	const markerIndex = text.indexOf(marker);
-	if (markerIndex === -1) return '';
-	const startIndex = text.indexOf('{', markerIndex);
-	if (startIndex === -1) return '';
-	let depth = 0;
-	let inString = false;
-	let escaped = false;
-	for (let i = startIndex; i < text.length; i++) {
-		const char = text[i];
-		if (inString) {
-			if (escaped) {
-				escaped = false;
-			} else if (char === '\\') {
-				escaped = true;
-			} else if (char === '"') {
-				inString = false;
-			}
-			continue;
-		}
-		if (char === '"') {
-			inString = true;
-		} else if (char === '{') {
-			depth += 1;
-		} else if (char === '}') {
-			depth -= 1;
-			if (depth === 0) {
-				return text.slice(startIndex, i + 1);
-			}
-		}
-	}
-	return '';
-}
-
-async function fetchViewData(bvid: string): Promise<BilibiliViewData | null> {
+async function fetchViewData(bvid: string, pageUrl: string): Promise<BilibiliViewData | null> {
 	const url = addNoCacheParam(`${BILIBILI_VIEW_API}?bvid=${encodeURIComponent(bvid)}`);
-	const json = await fetchJson(url, { credentials: 'include', referrer: 'https://www.bilibili.com/' });
+	const json = await fetchJson(url, {
+		credentials: 'include',
+		referrer: pageUrl,
+		cache: 'no-store',
+		preferPage: true,
+	});
 	return json?.code === 0 ? json.data || null : null;
 }
 
-async function fetchPlayerData(bvid: string, cid: number): Promise<BilibiliPlayerFetchResult> {
-	const params = buildBilibiliPlayerParams(bvid, cid);
-	let fallback: BilibiliPlayerFetchResult = { data: null, usedDirectRetry: false };
-	for (const endpoint of [BILIBILI_PLAYER_API, BILIBILI_PLAYER_WBI_API]) {
-		const { json, usedDirectRetry } = await fetchJsonWithResult(
-			addNoCacheParam(`${endpoint}?${params}`),
-			{ credentials: 'include', referrer: 'https://www.bilibili.com/', cache: 'no-store' },
+async function fetchPlayerData(
+	bvid: string,
+	cid: number,
+	aid: number | undefined,
+	pageUrl: string
+): Promise<BilibiliPlayerFetchResult> {
+	const requests = [
+		...(aid ? [{
+			endpoint: BILIBILI_PLAYER_WBI_API,
+			params: buildBilibiliPlayerWbiParams(aid, cid),
+		}] : []),
+		{
+			endpoint: BILIBILI_PLAYER_API,
+			params: buildBilibiliPlayerParams(bvid, cid),
+		},
+		...(aid ? [] : [{
+			endpoint: BILIBILI_PLAYER_WBI_API,
+			params: buildBilibiliPlayerParams(bvid, cid),
+		}]),
+	];
+	let fallback: BilibiliPlayerFetchResult = { data: null, fetchSource: 'none', usedDirectRetry: false };
+	for (const request of requests) {
+		const { json, source, usedDirectRetry } = await fetchJsonWithResult(
+			addNoCacheParam(`${request.endpoint}?${request.params}`),
+			{ credentials: 'include', referrer: pageUrl, cache: 'no-store', preferPage: true },
 			isLoginGatedEmptySubtitleResponse
 		);
 		if (json?.code !== 0) continue;
 		const data = json.data || null;
-		if (!fallback.data) fallback = { data, endpoint, usedDirectRetry };
-		if ((data?.subtitle?.subtitles || []).length > 0) return { data, endpoint, usedDirectRetry };
+		if (!fallback.data) {
+			fallback = {
+				data,
+				endpoint: request.endpoint,
+				requestParams: request.params,
+				fetchSource: source,
+				usedDirectRetry,
+			};
+		}
+		if ((data?.subtitle?.subtitles || []).length > 0) {
+			return {
+				data,
+				endpoint: request.endpoint,
+				requestParams: request.params,
+				fetchSource: source,
+				usedDirectRetry,
+			};
+		}
 	}
 	return fallback;
 }
 
-async function fetchTranscript(track: BilibiliSubtitleTrack): Promise<BilibiliTranscript | undefined> {
+async function fetchTranscript(track: BilibiliSubtitleTrack, pageUrl: string): Promise<BilibiliTranscript | undefined> {
 	if (!track.subtitle_url) return undefined;
 	const subtitleUrl = normalizeSubtitleUrl(track.subtitle_url);
-	const json = await fetchJson(subtitleUrl, { credentials: 'omit', referrer: 'https://www.bilibili.com/', cache: 'no-store' });
+	const { json, source } = await fetchJsonWithResult(subtitleUrl, {
+		credentials: 'omit',
+		referrer: pageUrl,
+		cache: 'no-store',
+		preferPage: true,
+	});
 	const items = parseBilibiliSubtitleJson(json);
-	return buildBilibiliTranscript(items, track);
+	const transcript = buildBilibiliTranscript(items, track);
+	if (transcript) transcript.subtitleFetchSource = source;
+	return transcript;
 }
 
 function normalizeSubtitleUrl(url: string): string {
@@ -498,20 +506,36 @@ async function fetchJsonWithResult(
 	shouldRetryDirect?: (json: any) => boolean
 ): Promise<FetchJsonResult> {
 	const credentials = options.credentials || 'same-origin';
+	let deferredPageJson: any;
+	let hasDeferredPageJson = false;
+	if (options.preferPage) {
+		const pageJson = await fetchJsonViaPage(url, { ...options, credentials });
+		if (pageJson !== undefined && !shouldRetryDirect?.(pageJson)) {
+			return { json: pageJson, source: 'page', usedDirectRetry: false };
+		}
+		if (pageJson !== undefined) {
+			deferredPageJson = pageJson;
+			hasDeferredPageJson = true;
+		}
+	}
+
 	const proxied = await fetchJsonViaBackground(url, { ...options, credentials });
 	if (proxied !== undefined) {
 		if (!shouldRetryDirect?.(proxied)) {
-			return { json: proxied, usedDirectRetry: false };
+			return { json: proxied, source: 'background', usedDirectRetry: false };
 		}
 		const direct = await fetchJsonDirect(url, { ...options, credentials });
 		if (direct !== undefined) {
-			return { json: direct, usedDirectRetry: true };
+			return { json: direct, source: 'direct', usedDirectRetry: true };
 		}
-		return { json: proxied, usedDirectRetry: false };
+		return { json: proxied, source: 'background', usedDirectRetry: false };
 	}
 
 	const direct = await fetchJsonDirect(url, { ...options, credentials });
-	return { json: direct, usedDirectRetry: false };
+	if (direct === undefined && hasDeferredPageJson) {
+		return { json: deferredPageJson, source: 'page', usedDirectRetry: false };
+	}
+	return { json: direct, source: direct === undefined ? 'none' : 'direct', usedDirectRetry: false };
 }
 
 async function fetchJsonDirect(url: string, options: FetchJsonOptions & { credentials: RequestCredentials }): Promise<any | undefined> {
@@ -527,10 +551,10 @@ async function fetchJsonDirect(url: string, options: FetchJsonOptions & { creden
 			},
 			signal: controller.signal,
 		});
-		if (!response.ok) return null;
+		if (!response.ok) return undefined;
 		return await response.json();
 	} catch {
-		return null;
+		return undefined;
 	} finally {
 		clearTimeout(timeout);
 	}
@@ -545,6 +569,36 @@ async function fetchJsonViaBackground(url: string, options: FetchJsonOptions): P
 		const response = await new Promise<any>((resolve) => {
 			chrome.runtime.sendMessage({
 				action: 'fetchProxy',
+				url,
+				options: {
+					credentials: options.credentials,
+					referrer: options.referrer,
+					cache: options.cache,
+					headers: {
+						'Accept': 'application/json,text/plain,*/*',
+					},
+				},
+			}, resolve);
+		});
+
+		if (!response || !response.ok || !response.text) {
+			return undefined;
+		}
+		return JSON.parse(response.text);
+	} catch {
+		return undefined;
+	}
+}
+
+async function fetchJsonViaPage(url: string, options: FetchJsonOptions & { credentials: RequestCredentials }): Promise<any | undefined> {
+	if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+		return undefined;
+	}
+
+	try {
+		const response = await new Promise<any>((resolve) => {
+			chrome.runtime.sendMessage({
+				action: 'pageFetch',
 				url,
 				options: {
 					credentials: options.credentials,

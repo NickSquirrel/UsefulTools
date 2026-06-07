@@ -1,7 +1,9 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
 	buildBilibiliPlayerParams,
+	buildBilibiliPlayerWbiParams,
 	buildBilibiliTranscript,
+	extractBilibiliContent,
 	extractBvid,
 	getBilibiliCidFromUrl,
 	getBilibiliPageNumber,
@@ -10,6 +12,10 @@ import {
 	pickBilibiliSubtitleTrack,
 	selectBilibiliCid,
 } from './bilibili-transcript';
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 describe('bilibili transcript utilities', () => {
 	test('extracts BVID and page number from video URLs', () => {
@@ -25,6 +31,13 @@ describe('bilibili transcript utilities', () => {
 
 		expect(params).toBe('bvid=BV1hN596zEas&cid=38368837657');
 		expect(params).not.toContain('aid=');
+	});
+
+	test('builds wbi player params from the fetched current aid and cid', () => {
+		const params = buildBilibiliPlayerWbiParams(113384250999061, 38368837657);
+
+		expect(params).toBe('aid=113384250999061&cid=38368837657');
+		expect(params).not.toContain('bvid=');
 	});
 
 	test('accepts only view data that declares the requested bvid', () => {
@@ -141,5 +154,42 @@ describe('bilibili transcript utilities', () => {
 		expect(transcript?.text).toContain('**1:05** - Second line');
 		expect(transcript?.html).toContain('class="bilibili transcript"');
 		expect(transcript?.source).toBe('cc');
+	});
+
+	test('rejects fetched view data when it does not match the current URL bvid', async () => {
+		const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				code: 0,
+				data: {
+					bvid: 'BV1hN596zEas',
+					aid: 113384250999061,
+					cid: 38368837657,
+					pages: [{ page: 1, cid: 38368837657 }],
+				},
+			}),
+		} as Response);
+		const warnMock = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const documentMock = {
+			location: { href: 'https://www.bilibili.com/video/BV1mf4y1z7Db/' },
+			title: 'Wrong inline state should not matter',
+			querySelector: () => null,
+		} as unknown as Document;
+
+		const result = await extractBilibiliContent(
+			documentMock,
+			'https://www.bilibili.com/video/BV1mf4y1z7Db/'
+		);
+
+		expect(result).toBeNull();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(String(fetchMock.mock.calls[0][0])).toContain('bvid=BV1mf4y1z7Db');
+		expect(warnMock).toHaveBeenCalledWith(
+			'[Obsidian Clipper] Bilibili view data unavailable',
+			expect.objectContaining({
+				bvid: 'BV1mf4y1z7Db',
+				fetchedBvid: 'BV1hN596zEas',
+			})
+		);
 	});
 });

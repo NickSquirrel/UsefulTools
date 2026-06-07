@@ -301,6 +301,68 @@ async function nativeFetch(url: string, options?: any): Promise<{ ok: boolean; s
 	}
 }
 
+async function pageFetch(
+	url: string,
+	options: any,
+	sender: browser.Runtime.MessageSender
+): Promise<{ ok: boolean; status: number; text: string; finalUrl?: string; error?: string }> {
+	const tabId = sender.tab?.id;
+	if (!tabId || !browser.scripting?.executeScript) {
+		return { ok: false, status: 0, text: '', error: 'PAGE_FETCH_UNAVAILABLE' };
+	}
+
+	const target: any = { tabId };
+	const frameId = (sender as any).frameId;
+	if (typeof frameId === 'number' && frameId >= 0) {
+		target.frameIds = [frameId];
+	}
+
+	try {
+		const results = await (browser.scripting.executeScript as any)({
+			target,
+			world: 'MAIN',
+			func: async (requestUrl: string, requestOptions: any) => {
+				try {
+					const fetchOptions: RequestInit = {};
+					if (requestOptions?.method) fetchOptions.method = requestOptions.method;
+					if (requestOptions?.headers) fetchOptions.headers = requestOptions.headers;
+					if (requestOptions?.body) fetchOptions.body = requestOptions.body;
+					if (requestOptions?.credentials) fetchOptions.credentials = requestOptions.credentials;
+					if (requestOptions?.referrer) fetchOptions.referrer = requestOptions.referrer;
+					if (requestOptions?.cache) fetchOptions.cache = requestOptions.cache;
+
+					const response = await fetch(requestUrl, fetchOptions);
+					const text = await response.text();
+					return { ok: response.ok, status: response.status, text, finalUrl: response.url };
+				} catch (error) {
+					return {
+						ok: false,
+						status: 0,
+						text: '',
+						error: error instanceof Error ? error.message : String(error),
+					};
+				}
+			},
+			args: [url, options || {}],
+		});
+		return results?.[0]?.result || { ok: false, status: 0, text: '', error: 'PAGE_FETCH_EMPTY' };
+	} catch (error) {
+		return {
+			ok: false,
+			status: 0,
+			text: '',
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+browser.runtime.onMessage.addListener((request: unknown, sender: browser.Runtime.MessageSender) => {
+	if (typeof request !== 'object' || request === null) return;
+	if ((request as any).action !== 'pageFetch') return;
+	const { url, options } = request as { url: string; options?: any };
+	return pageFetch(url, options, sender);
+});
+
 // Fetch proxy for extension pages (reader, highlights).
 // Returns a Promise for the webextension-polyfill.
 // On Firefox MV3, host_permissions require explicit user grant —
